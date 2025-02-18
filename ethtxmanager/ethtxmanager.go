@@ -781,6 +781,12 @@ func (c *Client) reviewMonitoredTxGas(ctx context.Context, mTx *monitoredTxnIter
 		mTx.GasPrice = gasPrice
 	}
 
+	// update gas price if not mined for long time
+	if mTx.UpdatedAt.Add(time.Minute * 2).Before(time.Now()) {
+		mTxLogger.Infof("[ethtxmanager-Client] update gasprice due to long time not mined, chain gasPrice: %v, mTx.GasPrice: %v, last update time: %v", gasPrice.String(), mTx.GasPrice.String(), mTx.UpdatedAt)
+		mTx.GasPrice = big.NewInt(0).Add(gasPrice, big.NewInt(1e6))
+	}
+
 	// get gas
 	if !mTx.EstimateGas {
 		mTxLogger.Info("tx is using a hardcoded gas, avoiding estimate gas")
