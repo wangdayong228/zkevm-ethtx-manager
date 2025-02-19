@@ -21,10 +21,10 @@ var (
 
 func main() {
 	config := ethtxmanager.Config{
-		FrequencyToMonitorTxs:           types.Duration{Duration: 1 * time.Second},
-		WaitTxToBeMined:                 types.Duration{Duration: 2 * time.Minute},
+		FrequencyToMonitorTxs:           types.Duration{Duration: 20 * time.Second},
+		WaitTxToBeMined:                 types.Duration{Duration: 10 * time.Second},
 		GetReceiptMaxTime:               types.Duration{Duration: 10 * time.Second},
-		GetReceiptWaitInterval:          types.Duration{Duration: 250 * time.Millisecond},
+		GetReceiptWaitInterval:          types.Duration{Duration: 500 * time.Millisecond},
 		ForcedGas:                       0,
 		GasPriceMarginFactor:            1,
 		MaxGasPriceLimit:                0,
@@ -32,13 +32,13 @@ func main() {
 		FinalizedStatusL1NumberOfBlocks: 0,
 		StoragePath:                     "ethtxmanager-persistence.db",
 		ReadPendingL1Txs:                false,
-		Log:                             log.Config{Level: "info", Environment: "development", Outputs: []string{"stderr"}},
+		Log:                             log.Config{Level: "debug", Environment: "development", Outputs: []string{"stderr"}},
 		PrivateKeys:                     []types.KeystoreFileConfig{{Path: "test.keystore", Password: "testonly"}},
 		Etherman: etherman.Config{
-			URL:              "http://localhost:8545",
+			URL:              "http://localhost:3030",
 			HTTPHeaders:      map[string]string{},
 			MultiGasProvider: false,
-			L1ChainID:        1337,
+			// L1ChainID:        1337,
 		},
 	}
 	log.Init(config.Log)
@@ -62,7 +62,7 @@ func main() {
 	}
 
 	for {
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 		// Check all sent tx are confirmed
 		results, err := client.ResultsByStatus(ctx, nil)
 		if err != nil {
@@ -78,10 +78,11 @@ func main() {
 			x++
 		}
 
-		if x == len(results) {
-			log.Info("All txs finalized")
-			break
-		}
+		// NOTE: uncomment future
+		// if x == len(results) {
+		// 	log.Info("All txs finalized")
+		// 	break
+		// }
 	}
 
 	// Clean up

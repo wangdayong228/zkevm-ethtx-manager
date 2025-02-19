@@ -8,6 +8,7 @@ require (
 	github.com/hermeznetwork/tracerr v0.3.2
 	github.com/holiman/uint256 v1.3.2
 	github.com/mattn/go-sqlite3 v1.14.24
+	github.com/pkg/errors v0.9.1
 	github.com/rubenv/sql-migrate v1.7.1
 	github.com/russross/meddler v1.0.1
 	github.com/stretchr/testify v1.10.0

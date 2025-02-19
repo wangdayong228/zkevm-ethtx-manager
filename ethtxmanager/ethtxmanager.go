@@ -7,7 +7,7 @@ package ethtxmanager
 import (
 	"context"
 	"encoding/json"
-	"errors"
+
 	"fmt"
 	"math/big"
 	"sync"
@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/holiman/uint256"
+	"github.com/pkg/errors"
 )
 
 const failureIntervalInSeconds = 5
@@ -323,7 +324,14 @@ func (c *Client) add(
 		return common.Hash{}, err
 	}
 
-	mTxLog := log.WithFields("types.MonitoredTx", mTx.ID, "createdAt", mTx.CreatedAt)
+	mTx, err = c.storage.Get(ctx, mTx.ID)
+	if err != nil {
+		err := fmt.Errorf("failed to get tx from storage: %w", err)
+		log.Errorf(err.Error())
+		return common.Hash{}, err
+	}
+
+	mTxLog := log.WithFields("types.MonitoredTx", mTx.ID, "createdAt", mTx.CreatedAt, "updatedAt", mTx.UpdatedAt)
 	mTxLog.Infof("created")
 
 	return id, nil
@@ -345,7 +353,7 @@ func (c *Client) ResultsByStatus(ctx context.Context,
 	statuses []types.MonitoredTxStatus) ([]types.MonitoredTxResult, error) {
 	mTxs, err := c.storage.GetByStatus(ctx, statuses)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "failed to get by status")
 	}
 
 	results := make([]types.MonitoredTxResult, 0, len(mTxs))
@@ -353,7 +361,7 @@ func (c *Client) ResultsByStatus(ctx context.Context,
 	for _, mTx := range mTxs {
 		result, err := c.buildResult(ctx, mTx)
 		if err != nil {
-			return nil, err
+			return nil, errors.WithMessage(err, "failed to build result")
 		}
 		results = append(results, result)
 	}
@@ -388,17 +396,17 @@ func (c *Client) buildResult(ctx context.Context, mTx types.MonitoredTx) (types.
 	for _, txHash := range history {
 		tx, _, err := c.etherman.GetTx(ctx, txHash)
 		if !errors.Is(err, ethereum.NotFound) && err != nil {
-			return types.MonitoredTxResult{}, err
+			return types.MonitoredTxResult{}, errors.WithMessage(err, "failed to get tx")
 		}
 
 		receipt, err := c.etherman.GetTxReceipt(ctx, txHash)
 		if !errors.Is(err, ethereum.NotFound) && err != nil {
-			return types.MonitoredTxResult{}, err
+			return types.MonitoredTxResult{}, errors.WithMessage(err, "failed to get tx receipt")
 		}
 
 		revertMessage, err := c.etherman.GetRevertMessage(ctx, tx)
 		if !errors.Is(err, ethereum.NotFound) && err != nil && err.Error() != ErrExecutionReverted.Error() {
-			return types.MonitoredTxResult{}, err
+			return types.MonitoredTxResult{}, errors.WithMessage(err, "failed to get revert message")
 		}
 
 		txs[txHash] = types.TxResult{
@@ -439,6 +447,8 @@ func (c *Client) Start() {
 			err := c.storage.Add(context.Background(), mTx)
 			if err != nil {
 				log.Errorf("failed to add pending tx to storage: %v", err)
+			} else {
+				log.Infof("added pending tx to storage: %v", mTx)
 			}
 		}
 	}
@@ -589,7 +599,7 @@ func (c *Client) waitSafeTxToBeFinalized(ctx context.Context) error {
 // monitorTx does all the monitoring steps to the monitored tx
 func (c *Client) monitorTx(ctx context.Context, mTx *monitoredTxnIteration, logger *log.Logger) {
 	var err error
-	logger.Info("processing")
+	logger.Info("******* processing *******")
 
 	var signedTx *ethTypes.Transaction
 	if !mTx.confirmed {
@@ -612,11 +622,22 @@ func (c *Client) monitorTx(ctx context.Context, mTx *monitoredTxnIteration, logg
 			logger.Errorf("failed to sign tx %v: %v", tx.Hash().String(), err)
 			return
 		}
-		logger.Debugf("signed tx %v created", signedTx.Hash().String())
+		logger.Debugf("signed tx %v created, gasPrice: %v", signedTx.Hash().String(), signedTx.GasPrice().String())
 
 		// add tx to monitored tx history
 		found, err := mTx.AddHistory(signedTx)
 		if found {
+			// update monitored tx changes into storage
+			if mTx.Status == types.MonitoredTxStatusCreated {
+				mTx.Status = types.MonitoredTxStatusSent
+				mTx.LastTxSentTime = time.Now()
+				err = c.storage.Update(ctx, *mTx.MonitoredTx)
+				if err != nil {
+					logger.Errorf("failed to update monitored tx: %v", err)
+					return
+				}
+				logger.Infof("update monitored tx status to sent")
+			}
 			logger.Infof("signed tx already existed in the history")
 		} else if err != nil {
 			logger.Errorf("failed to add signed tx %v to monitored tx history: %v", signedTx.Hash().String(), err)
@@ -640,7 +661,15 @@ func (c *Client) monitorTx(ctx context.Context, mTx *monitoredTxnIteration, logg
 			if err != nil {
 				logger.Warnf("failed to send tx %v to network: %v", signedTx.Hash().String(), err)
 				return
+			} else {
+				mTx.LastTxSentTime = time.Now()
+				err = c.storage.Update(ctx, *mTx.MonitoredTx)
+				if err != nil {
+					logger.Errorf("failed to update monitored tx changes: %v", err)
+					return
+				}
 			}
+
 			logger.Infof("signed tx sent to the network: %v", signedTx.Hash().String())
 			if mTx.Status == types.MonitoredTxStatusCreated {
 				// update tx status to sent
@@ -755,7 +784,7 @@ func (c *Client) shouldContinueToMonitorThisTx(ctx context.Context, receipt *eth
 // accordingly to the current information stored and the current
 // state of the blockchain
 func (c *Client) reviewMonitoredTxGas(ctx context.Context, mTx *monitoredTxnIteration, mTxLogger *log.Logger) error {
-	mTxLogger.Debug("reviewing")
+	mTxLogger.Debug("******* reviewing *******")
 	isBlobTx := mTx.BlobSidecar != nil
 	var (
 		err error
@@ -782,9 +811,10 @@ func (c *Client) reviewMonitoredTxGas(ctx context.Context, mTx *monitoredTxnIter
 	}
 
 	// update gas price if not mined for long time
-	if mTx.UpdatedAt.Add(time.Minute * 2).Before(time.Now()) {
+	mTxLogger.Infof("ready to update gasprice, mTx.ID: %v, mTx.LastTxSentTime: %v, time.Now(): %v", mTx.ID, mTx.LastTxSentTime, time.Now())
+	if mTx.LastTxSentTime.Add(time.Minute * 1).Before(time.Now()) {
 		mTxLogger.Infof("[ethtxmanager-Client] update gasprice due to long time not mined, chain gasPrice: %v, mTx.GasPrice: %v, last update time: %v", gasPrice.String(), mTx.GasPrice.String(), mTx.UpdatedAt)
-		mTx.GasPrice = big.NewInt(0).Add(gasPrice, big.NewInt(1e6))
+		mTx.GasPrice = big.NewInt(0).Add(mTx.GasPrice, big.NewInt(1e6))
 	}
 
 	// get gas

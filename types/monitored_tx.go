@@ -102,6 +102,9 @@ type MonitoredTx struct {
 
 	// EstimateGas indicates whether gas should be estimated or the last value should be reused
 	EstimateGas bool `mapstructure:"estimateGas" meddler:"estimate_gas"`
+
+	// LastTxSentTime is the timestamp for when the transaction was last sent
+	LastTxSentTime time.Time `mapstructure:"lastTxSentTime" meddler:"last_tx_sent_time,timeRFC3339"`
 }
 
 // Tx uses the current information to build a tx
