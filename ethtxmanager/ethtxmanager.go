@@ -194,6 +194,7 @@ func (c *Client) add(
 	gas uint64,
 ) (common.Hash, error) {
 	var err error
+	log.WithFields("from", c.from, "to", to, "value", value, "selector", fmt.Sprintf("%x", data[:4])).Info("ready to add tx")
 
 	// get gas price
 	gasPrice, err := c.suggestedGasPrice(ctx)
@@ -331,7 +332,7 @@ func (c *Client) add(
 		return common.Hash{}, err
 	}
 
-	mTxLog := log.WithFields("types.MonitoredTx", mTx.ID, "createdAt", mTx.CreatedAt, "updatedAt", mTx.UpdatedAt)
+	mTxLog := log.WithFields("types.MonitoredTx", mTx.ID, "createdAt", mTx.CreatedAt, "updatedAt", mTx.UpdatedAt, "from", mTx.From, "to", mTx.To, "nonce", mTx.Nonce, "selector", fmt.Sprintf("%x", mTx.Data[:4]))
 	mTxLog.Infof("created")
 
 	return id, nil
@@ -813,8 +814,10 @@ func (c *Client) reviewMonitoredTxGas(ctx context.Context, mTx *monitoredTxnIter
 	// update gas price if not mined for long time
 	mTxLogger.Infof("ready to update gasprice, mTx.ID: %v, mTx.LastTxSentTime: %v, time.Now(): %v", mTx.ID, mTx.LastTxSentTime, time.Now())
 	if mTx.LastTxSentTime.Add(time.Minute * 1).Before(time.Now()) {
-		mTxLogger.Infof("[ethtxmanager-Client] update gasprice due to long time not mined, chain gasPrice: %v, mTx.GasPrice: %v, last update time: %v", gasPrice.String(), mTx.GasPrice.String(), mTx.UpdatedAt)
-		mTx.GasPrice = big.NewInt(0).Add(mTx.GasPrice, big.NewInt(1e6))
+		mTxLogger.Infof("[EthTxManager-Client] update gasprice due to long time not mined, chain gasPrice: %v, mTx.GasPrice: %v, last update time: %v", gasPrice.String(), mTx.GasPrice.String(), mTx.UpdatedAt)
+		_gasPrice := big.NewInt(0).Mul(mTx.GasPrice, big.NewInt(120))
+		_gasPrice = big.NewInt(0).Div(_gasPrice, big.NewInt(100))
+		mTx.GasPrice = _gasPrice
 	}
 
 	// get gas
