@@ -815,7 +815,7 @@ func (c *Client) reviewMonitoredTxGas(ctx context.Context, mTx *monitoredTxnIter
 	mTxLogger.Infof("ready to update gasprice, mTx.ID: %v, mTx.LastTxSentTime: %v, time.Now(): %v", mTx.ID, mTx.LastTxSentTime, time.Now())
 	if mTx.LastTxSentTime.Add(time.Minute * 1).Before(time.Now()) {
 		mTxLogger.Infof("[EthTxManager-Client] update gasprice due to long time not mined, chain gasPrice: %v, mTx.GasPrice: %v, last update time: %v", gasPrice.String(), mTx.GasPrice.String(), mTx.UpdatedAt)
-		_gasPrice := big.NewInt(0).Mul(mTx.GasPrice, big.NewInt(120))
+		_gasPrice := big.NewInt(0).Mul(mTx.GasPrice, big.NewInt(102))
 		_gasPrice = big.NewInt(0).Div(_gasPrice, big.NewInt(100))
 		mTx.GasPrice = _gasPrice
 	}
