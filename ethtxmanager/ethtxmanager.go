@@ -7,6 +7,8 @@ package ethtxmanager
 import (
 	"context"
 	"encoding/json"
+	"math"
+	"runtime/debug"
 
 	"fmt"
 	"math/big"
@@ -194,7 +196,7 @@ func (c *Client) add(
 	gas uint64,
 ) (common.Hash, error) {
 	var err error
-	log.WithFields("from", c.from, "to", to, "value", value, "selector", fmt.Sprintf("%x", data[:4])).Info("ready to add tx")
+	log.WithFields("from", c.from, "to", to, "value", value, "selector", fmt.Sprintf("%x", data[:int(math.Min(4, float64(len(data))))])).Info("ready to add tx")
 
 	// get gas price
 	gasPrice, err := c.suggestedGasPrice(ctx)
@@ -332,7 +334,8 @@ func (c *Client) add(
 		return common.Hash{}, err
 	}
 
-	mTxLog := log.WithFields("types.MonitoredTx", mTx.ID, "createdAt", mTx.CreatedAt, "updatedAt", mTx.UpdatedAt, "from", mTx.From, "to", mTx.To, "nonce", mTx.Nonce, "selector", fmt.Sprintf("%x", mTx.Data[:4]))
+	mTxLog := log.WithFields("types.MonitoredTx", mTx.ID, "createdAt", mTx.CreatedAt, "updatedAt", mTx.UpdatedAt, "from", mTx.From, "to", mTx.To, "nonce", mTx.Nonce, "selector", fmt.Sprintf("%x", mTx.Data[:4])).
+		WithFields("stack", string(debug.Stack()))
 	mTxLog.Infof("created")
 
 	return id, nil
